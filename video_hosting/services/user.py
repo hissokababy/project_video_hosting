@@ -1,16 +1,20 @@
+import hashlib
 from typing import IO
+from random import sample
+from string import ascii_letters, digits
 
 from django.core.files.storage import default_storage
 
+from project_video_hosting.settings import VIDEO_RESOLUTIONS
 from video_hosting.serializers import MyVideoSerializer
 from video_hosting.models import User, Video
 from video_hosting.exeptions import InvalidVideoId
-from video_hosting.utils import VideoProcess
 from hosting_auth.services.user_auth import HostingAuth
+from video_hosting.tasks import process_video_task
+
 
 class VideoHostingService:
     def __init__(self):
-        self.video_process = VideoProcess()
         self.hosting_auth = HostingAuth()
 
     def change_user(self, user_id: int, active: bool|None=True) -> None:
@@ -22,15 +26,32 @@ class VideoHostingService:
 
 
     ###### ---->>>>>   РАБОТА С ВИДЕО   <<<<<---- ######
+
     def create_video(self, user_id: int, title: str, preview: IO, video_file: IO, duration: int) -> Video:
-
         user = self.hosting_auth.get_user(user_id=user_id)
-
         video = Video.objects.create(created_by=user, title=title, duration=duration, preview=preview, 
-                                        hls_dir_name=self.generate_dir_name(length=15), video=video_file)
-        video_hash = self.check_video_hash(video_file=video_file, video=video)
+                                     video=video_file)
+        
+        hasher = hashlib.sha256()
+        with video.video.open('rb') as f:
+            contents = f.read()
+            hasher.update(contents)
+    
+            video_hash = hasher.hexdigest()
 
-        return video
+            try:
+                existing_video = Video.objects.get(hash=video_hash)
+                video.delete()
+                return existing_video.pk
+            
+            except Video.DoesNotExist:
+                video.hash = video_hash
+                video.hls_dir_name = self.generate_dir_name(length=15)
+                video.save()
+            
+                process_video_task.delay(input_file=video.video.name, resolutions=VIDEO_RESOLUTIONS, file_name=video.hls_dir_name,
+                                         video_id=video.pk)
+                
 
     def get_video(self, user_id: int, video_id: int) -> dict:
         try:
@@ -40,19 +61,6 @@ class VideoHostingService:
             return serializer.data
         except Video.DoesNotExist:
             raise InvalidVideoId
-        
-    
-    def process_video(self, input_file: IO, resolutions: list, file_name: str, video_id: int):
-        
-        master = self.video_process.create_hls(input_file=input_file, resolutions=resolutions, file_name=file_name)
-
-        video = Video.objects.get(pk=video_id)
-
-        video.master_playlist = master
-        video.video.delete()
-        video.processed = True
-        video.save()
-
 
     def delete_video(self, video_id: int, user_id: int):
         try:
@@ -67,29 +75,14 @@ class VideoHostingService:
     
 
     def generate_dir_name(self, length: int) -> str:
-        generated = self.video_process.random_dir_name(length)
-        video = Video.objects.filter(hls_dir_name=generated).exists()
+        symbols = ascii_letters + digits
+        generated_dir = ''.join(sample(symbols, length))
 
-        if video:
-            self.generate_dir_name(length=length)
-        else:
-            return generated
-        
-    
-    def check_video_hash(self, video_file: IO, video: Video) -> str:
-        video_hash = self.video_process.create_video_hash(video_file=video_file)
         try:
-            existing_video = Video.objects.get(hash=video_hash)
-            print('est video s takim hash')
-            video.hls_dir_name = existing_video.hls_dir_name
-            video.master_playlist = existing_video.master_playlist
-            # video.hash = existing_video.hash
-            video.save()
-
+            video = Video.objects.get(hls_dir_name=generated_dir)
+            self.generate_dir_name(length=length)
         except Video.DoesNotExist:
-            video.hash = video_hash
-            video.save()
-            return hash
+            return generated_dir
         
    ###### ---->>>>>   РАБОТА С ВИДЕО   <<<<<---- ######
 

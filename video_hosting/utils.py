@@ -1,9 +1,7 @@
 import subprocess
 import os
 import shutil
-import hashlib
-from random import sample
-from string import ascii_letters, digits
+
 from typing import IO
 
 from django.core.files.storage import default_storage
@@ -90,18 +88,4 @@ class VideoProcess:
 
         return lst
 
-
-    def random_dir_name(self, length: int):
-        symbols = ascii_letters + digits
-        random_str = ''.join(sample(symbols, length))
-        return random_str
-    
-    def create_video_hash(self, video_file: IO):
-
-        hasher = hashlib.sha256()
-        with video_file.open('rb') as f:
-            contents = f.read()
-            hasher.update(contents)
-    
-        return hasher.hexdigest()
     

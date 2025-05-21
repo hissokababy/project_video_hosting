@@ -37,7 +37,6 @@ class JWTAuthentication(BaseAuthentication):
     def validate_token_auth(self, token):
         hosting_service = HostingAuth()
         user = hosting_service.validate_access_token(access_token=token)
-        print(user)
         return user
     
     

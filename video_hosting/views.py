@@ -3,8 +3,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from project_video_hosting.settings import VIDEO_RESOLUTIONS
-from video_hosting.tasks import process_video_task
 from video_hosting.serializers import LoadVideoSerializer
 from video_hosting.services.user import VideoHostingService
 
@@ -18,16 +16,12 @@ class LoadVideoView(APIView):
         serializer = LoadVideoSerializer(data=self.request.data)
         serializer.is_valid(raise_exception=True)
 
-        video = self.service.create_video(user_id=self.request.user.pk, 
-                                          title=serializer.validated_data.get('title'),
-                                          preview=serializer.validated_data.get('preview'), 
-                                          video_file=serializer.validated_data.get('video'),
-                                          duration=serializer.validated_data.get('duration'))
+        video = self.service.create_video(user_id=request.user.pk, title=serializer.validated_data.get('title'),
+                                        duration=serializer.validated_data.get('duration'),
+                                        preview=serializer.validated_data.get('preview'), 
+                                        video_file=serializer.validated_data.get('video'))
 
-        process_video_task.delay(input_file=video.video.name, resolutions=VIDEO_RESOLUTIONS, file_name=video.hls_dir_name,
-                                   video_id=video.pk)
-
-        return Response(status=status.HTTP_202_ACCEPTED)
+        return Response(video, status=status.HTTP_202_ACCEPTED)
     
 
 class MyVideoView(APIView):
