@@ -11,5 +11,4 @@ private_key.pem
 public_key.pem
 
 
-__init__.py
 .env
